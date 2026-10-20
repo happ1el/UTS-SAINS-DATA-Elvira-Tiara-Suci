@@ -1,10 +1,9 @@
-@'
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
 
 # Virtual environment
+myenv/
 .venv/
 venv/
 env/
@@ -26,15 +25,12 @@ env/
 Thumbs.db
 desktop.ini
 
-# Logs
+# Logs and temporary files
 *.log
-
-# Temporary files
 *.tmp
 *.bak
 
-# Data and generated outputs
-data/
+# Generated data
 datasets/
 *.csv
 *.parquet
@@ -48,4 +44,3 @@ datasets/
 build/
 dist/
 *.egg-info/
-'@ | Set-Content -Encoding UTF8 .gitignore
