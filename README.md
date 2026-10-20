@@ -35,5 +35,5 @@ Program memilih user secara reproducible menggunakan random seed,
 mencari 5 tetangga terdekat, dan menghasilkan 3 rekomendasi item.
 
 ## Author
-Nama: [Isi nama kamu]
+Nama: Elvira Tiara Suci Tambunan
 '@ | Set-Content -Encoding UTF8 README.md
