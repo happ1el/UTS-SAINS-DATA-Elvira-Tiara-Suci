@@ -2,7 +2,7 @@
 
 Graph Data Science Midterm Project (UTS) - Universitas Negeri Surabaya
 
-This project applies Graph Data Science to the RetailRocket e-commerce event data. Visitor-product interactions are modeled as a graph in Neo4j, represented as a Vector Space Model (VSM), and then used to build a recommendation system based on K-Nearest Neighbors (KNN) with cosine similarity.
+This project applies Graph Data Science to the RetailRocket e-commerce event data. Visitor-product interactions are modeled as a graph in Neo4j, represented as a Vector Space Model (VSM), and then used to build a user-based recommendation system with K-Nearest Neighbors (KNN) and cosine similarity.
 
 ## Project Overview
 
@@ -14,8 +14,8 @@ E-commerce data is naturally relational: visitors view, add to cart, and purchas
 - Import the P1 data into Neo4j using the Python driver.
 - Build the User VSM and Item VSM, and compare the User-User and Item-Item projections.
 - Compute cosine similarity between items and store it in the graph as `SIMILAR_TO` relationships.
-- Generate 3 item recommendations for a target visitor using KNN (k = 5).
-- Evaluate the recommendations with Hit@5 and NDCG@5 using the P2 data.
+- Generate 3 advertised items for a randomly selected visitor using user-based KNN (k = 5).
+- Evaluate the recommendations with Hit@5 and NDCG@5 using the P2 data, for the selected user and as an average over 300 users.
 
 ## Dataset
 
@@ -27,12 +27,12 @@ Dataset: RetailRocket E-commerce Dataset (Kaggle). Only `events.csv` is used (2,
 | `data/events_p1.csv` | Events for period P1 (training) |
 | `data/events_p2.csv` | Events for period P2 (testing) |
 
-| Period | Range (UTC) | Purpose |
-|--------|-------------|---------|
-| P1 | 20 June 2015 00:00 - 27 June 2015 (end boundary 28 June 00:00, exclusive) | Building the Neo4j graph and finding KNN neighbors |
-| P2 | 28 June 2015 00:00 - 5 July 2015 (end boundary 6 July 00:00, exclusive) | Ground truth for evaluation |
+| Period | Range (UTC) | Rows | Users | Purpose |
+|--------|-------------|------|-------|---------|
+| P1 | 20 June 2015 00:00 - 27 June 2015 (end boundary 28 June 00:00, exclusive) | 155,694 | 83,096 | Building the Neo4j graph and finding KNN neighbors |
+| P2 | 28 June 2015 00:00 - 5 July 2015 (end boundary 6 July 00:00, exclusive) | 156,428 | 84,999 | Ground truth for evaluation |
 
-Both periods last 8 days and are consecutive without overlap, so there is no data leakage.
+Both periods last 8 days and are consecutive without overlap, so there is no data leakage. Only 3,780 users appear in both periods.
 
 ## Methods
 
@@ -40,13 +40,16 @@ Both periods last 8 days and are consecutive without overlap, so there is no dat
 |-----------|---------|
 | Data representation | Bipartite Visitor - Item graph in Neo4j, then a sparse matrix (`csr_matrix`) |
 | Interaction weights | `VIEWED` = 1, `ADDED_TO_CART` = 3, `BOUGHT` = 5 (summed per user-item pair) |
-| Recommendation algorithm | User-based KNN (collaborative filtering), `NearestNeighbors` |
-| Similarity measure | Cosine (cosine distance in KNN, cosine similarity for item similarity) |
-| Number of neighbors | k = 5 |
-| Number of recommendations | 3 items |
-| User filter | Only users with at least 3 distinct items (nnz >= 3) |
-| Recommendation score | Sum of the five neighbors' interaction weights per item; items already accessed by the target are excluded |
-| Evaluation metrics | Hit@5 and NDCG@5 |
+| Recommendation algorithm | User-based KNN (collaborative filtering) |
+| Similarity measure | Cosine similarity (`sklearn.metrics.pairwise.cosine_similarity`) on the User VSM |
+| Number of neighbors | k = 5 (only neighbors with similarity > 0) |
+| Recommendation score | Sum over the neighbors of (neighbor similarity x neighbor interaction weight on the item); items the target already touched in P1 are excluded; ties are broken by the smaller item ID |
+| Recommendation output | Top-5 ranked list; the top 3 items are the advertised items |
+| Evaluation metrics | Hit@5 and NDCG@5 with binary relevance |
+
+**Random user selection (reproducible).** The users that appear in both P1 and P2 are sorted by `visitorId`, and one user is drawn with `np.random.default_rng(42)`. Only users who meet two criteria are eligible: (1) KNN produces 5 recommended items, and (2) the user has at least one item in P2 that was not touched in P1. These criteria are needed because 81.5% of users touch only one item in P1, so many users receive no recommendation at all.
+
+**Ground truth.** The items the user accessed in P2 that were not touched in P1. Items from P1 are never recommended, so counting them as targets would unfairly lower NDCG.
 
 ## Technology Stack
 
@@ -82,9 +85,7 @@ UTS-SAINS-DATA-Elvira-Tiara-Suci/
 
 **7. Item similarity (2.1.7 - 2.1.8).** Compute the 5 most similar items to reference item 357779 using cosine similarity, store them as `SIMILAR_TO` relationships in Neo4j, and visualize the graph before and after.
 
-**8. Analytics (2.2).** Filter active users, randomly select one target visitor (seed 42), find the 5 nearest neighbors with KNN, and generate 3 item recommendations.
-
-**9. Evaluation (2.2.2).** Compute Hit@5 and NDCG@5 against the items accessed by the target in P2.
+**8. Analytics (2.2.1).** Select one eligible target visitor at random (seed 42), find its 5 nearest neighbors with user-based KNN, and generate a top-5 recommendation list, of which the top 3 items are advertised.
 
 ## Results
 
@@ -119,15 +120,51 @@ About 96.6% of interactions are `VIEWED`. The total number of relationships equa
 
 The Item-Item projection was chosen for the similarity computation because it is more compact in terms of nodes and gives a stronger similarity signal per node, while User-User is used for the KNN recommendation.
 
+**Item similarity (reference item 357779)**
+
+| Rank | Item ID | Cosine similarity |
+|------|---------|-------------------|
+| 1 | 66597 | 0.777482 |
+| 2 | 242493 | 0.777482 |
+| 3 | 403343 | 0.777482 |
+| 4 | 257410 | 0.774587 |
+| 5 | 304558 | 0.625624 |
+
 **KNN recommendation (k = 5)**
 
-Target: visitor ID 121147 (4 items in P1). The top three recommended items:
+Target: visitor ID 140772. The top-5 list, where the first three items are the advertised items:
 
-| Rank | Item ID | Aggregate score |
-|------|---------|-----------------|
-| 1 | 48030 | 18.0 |
-| 2 | 125660 | 13.0 |
-| 3 | 308053 | 12.0 |
+| Rank | Item ID | Aggregate score | Advertised |
+|------|---------|-----------------|------------|
+| 1 | 356315 | 2.383396 | Yes |
+| 2 | 453816 | 2.005431 | Yes |
+| 3 | 101718 | 1.627467 | Yes |
+| 4 | 175668 | 1.627467 | No |
+| 5 | 243170 | 1.627467 | No |
+
+Ranks 3, 4, and 5 have the same score, so their order is decided by the tie-breaking rule (smaller item ID first), not by a difference in quality.
+
+**Evaluation**
+
+For the selected user, the ground truth in P2 is a single item (387377), which is not among the five recommended items:
+
+| Metric | Value |
+|--------|-------|
+| Hit@5 | 0 |
+| DCG@5 | 0.0000 |
+| IDCG@5 | 1.0000 |
+| NDCG@5 | 0.0000 |
+
+Because a single user can only give 0 or 1 for Hit@5, the same metrics were averaged over 300 eligible users (random order, same seed):
+
+| Metric | Mean over 300 users |
+|--------|---------------------|
+| Hit@5 | 0.0600 |
+| NDCG@5 | 0.0301 |
+
+About 6% of the evaluated users (18 of 300) received at least one correct item in the top 5, so the zero for the selected user is the most common outcome rather than an exceptional case. Low values are expected with this dataset: user histories are very short (1.46 items per user on average), the catalog is large (53,450 items), and the ground truth is dominated by `VIEWED` events, while purchases are rare (1,327 of 155,694 relationships in P1).
+
+**Limitations.** The averages only cover users who meet the eligibility criteria, so they are likely more optimistic than the average over all users. The evaluation is not compared against a simple baseline such as recommending the most popular items, so it cannot yet show how much better KNN is than a basic method.
 
 ## How to Run
 
